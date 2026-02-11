@@ -51,7 +51,12 @@ class PageStreamingAttention(nn.Module):
 
         # Update cache
         kv_cache.update(k, v)
-
+        # Absolute query positions
+        query_positions = torch.arange(
+            kv_cache.cur_pos - T,
+            kv_cache.cur_pos,
+            device=q.device
+        )
         output = torch.zeros_like(q)
 
         # Online softmax state
@@ -71,6 +76,17 @@ class PageStreamingAttention(nn.Module):
                     v_page = v_page[:, :, :valid, :]
 
             scores = torch.matmul(q, k_page.transpose(-2, -1)) * scale
+            
+            # Absolute key positions for this page
+            start = page_idx * kv_cache.page_size
+            end = start + k_page.size(2)
+            
+            key_positions = torch.arange(start, end, device=q.device)
+            
+            # Build causal mask
+            mask = key_positions[None, None, None, :] <= query_positions[None, None, :, None]
+            
+            scores = scores.masked_fill(~mask, float("-inf"))
 
             block_max = scores.max(dim=-1).values
             new_m = torch.maximum(m_i, block_max)

@@ -1,6 +1,7 @@
 ### Naive Attention with KV cache
 import torch
 import torch.nn as nn
+import math
 
 class NaiveAttention(nn.Module):
     def __init__(self, hidden_size, num_heads):
@@ -28,9 +29,16 @@ class NaiveAttention(nn.Module):
         if kv_cache is not None:
             k, v = kv_cache.update(k, v)
         scale = 1.0 / math.sqrt(self.head_dim)
-        attn = torch.matmul(q, k.transpose(-2, -1)) * scale
-        attn = torch.softmax(attn, dim=-1)
-
+        attn_scores = torch.matmul(q, k.transpose(-2, -1)) * scale
+        
+        # Causal mask (lower triangular)
+        causal_mask = torch.tril(
+            torch.ones(T, T, device=q.device)
+        ).unsqueeze(0).unsqueeze(0)
+        
+        attn_scores = attn_scores.masked_fill(causal_mask == 0, float("-inf"))
+        
+        attn = torch.softmax(attn_scores, dim=-1)
         out = torch.matmul(attn, v)
         out = out.transpose(1, 2).contiguous().view(B, T, C)
 
